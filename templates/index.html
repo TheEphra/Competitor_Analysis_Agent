@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080910">
+  <title>Competitor Analysis Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+</head>
+<body>
+  <nav class="nav wrap">
+    <a class="brand" href="#top"><span class="brand-mark">CA</span><span>Competitor Analysis<span class="brand-dot">.</span></span></a>
+    <div class="nav-links"><a href="#workspace">Workspace</a><a href="#discovery">Discover</a><a href="#competitors">Competitors</a><a href="#results">Results</a><a class="nav-cta" href="#workspace">Start analysis ↗</a></div>
+  </nav>
+
+  <main id="top" class="wrap">
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="status-dot"></span> LOCAL MARKET RESEARCH</div>
+        <h1>See the market<br>with <span class="gradient-text">more clarity.</span></h1>
+        <p class="hero-lead">Compare public website signals from businesses around you. Clear evidence, practical next steps, no mystery scores.</p>
+        <div class="hero-actions"><a class="button primary" href="#workspace">Set up your analysis <span>↘</span></a><a class="button secondary" href="#how-it-works">How it works</a></div>
+        <div class="hero-meta"><span><i class="meta-dot violet"></i> Website signals</span><span><i class="meta-dot blue"></i> Local discovery</span><span><i class="meta-dot green"></i> Transparent scoring</span></div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div>
+        <div class="core"><span>↗</span><small>FIND · COMPARE · LEARN</small></div>
+        <div class="float-card card-top"><span class="mini-icon purple">◎</span><div><b>Local businesses</b><small>Discover nearby options</small></div></div>
+        <div class="float-card card-bottom"><span class="mini-icon cyan">◫</span><div><b>Website signals</b><small>Compare what’s visible</small></div></div>
+        <span class="spark spark-a">✳</span><span class="spark spark-b">✦</span>
+      </div>
+      <div class="hero-index"><span>01 / RESEARCH WORKSPACE</span><span>BUILT FOR CLEAR COMPARISONS ↓</span></div>
+    </section>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}<div class="flash-stack" aria-live="polite">{% for category, message in messages %}<div class="flash {{ category }}"><span>{{ '✓' if category == 'success' else '!' }}</span>{{ message }}</div>{% endfor %}</div>{% endif %}
+    {% endwith %}
+
+    <section class="section" id="workspace">
+      <div class="section-kicker">01 — YOUR BUSINESS</div>
+      <div class="section-heading"><div><h2>Set the research context.</h2><p>These details guide local discovery and label your report.</p></div><span class="step-badge">STEP 01</span></div>
+      <form class="panel form-grid" method="post" action="{{ url_for('save_profile') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Your business name<input name="company" value="{{ profile.company }}" placeholder="e.g. Suman Salon"></label>
+        <label>Location<input name="location" value="{{ profile.location }}" placeholder="Town, state, country" required></label>
+        <label>Industry<select name="industry" id="industry-select"><option value="">Choose an industry</option>{% for option in industries %}<option value="{{ option }}" {% if not is_custom and profile.industry|lower == option|lower %}selected{% endif %}>{{ option }}</option>{% endfor %}<option value="__custom__" {% if is_custom %}selected{% endif %}>Other / type your own</option></select></label>
+        <label id="custom-industry-wrap" class="{% if is_custom %}{% else %}hidden{% endif %}">Custom industry<input id="custom-industry" name="custom_industry" value="{% if is_custom %}{{ profile.industry }}{% endif %}" placeholder="e.g. tailoring shop"></label>
+        <label class="span-two">Your website <span class="optional">optional</span><input name="website" value="{{ profile.website }}" placeholder="https://yourbusiness.com"><small>We’ll analyse only the public homepage.</small></label>
+        <div class="form-actions span-two"><p>Details stay in this local app session and are used to organize your comparison.</p><button class="button primary" type="submit">Save details <span>↗</span></button></div>
+      </form>
+    </section>
+
+    <section class="section" id="discovery">
+      <div class="section-kicker">02 — FIND COMPETITORS</div>
+      <div class="section-heading"><div><h2>Build your comparison set.</h2><p>Search by area and industry, then choose which businesses to analyse.</p></div><span class="step-badge">STEP 02</span></div>
+      <div class="discovery-layout">
+        <form class="panel discover-form" method="post" action="{{ url_for('discover') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="panel-icon">⌕</div><h3>Discover local businesses</h3>
+          <p>Google Places returns candidate listings. Results vary by area and may not include every business.</p>
+          <label>Search area<input name="location" value="{{ profile.location }}" placeholder="Parassala, Kerala, India" required></label>
+          <label>Industry<input name="industry" value="{{ profile.industry }}" placeholder="Salon, cafe, dentist…" required><small>Common misspellings are corrected when they match a known category. Custom terms are allowed.</small></label>
+          <label>Maximum results<select name="limit">{% for n in [5,10,15,20] %}<option value="{{ n }}" {% if n == 10 %}selected{% endif %}>{{ n }} businesses</option>{% endfor %}</select></label>
+          <div class="cost-note"><span>ⓘ</span><p>Requires your Google Places key and a billing-enabled Google Cloud project. Search requests may incur charges.</p></div>
+          <button class="button primary full" type="submit">Search Google Places <span>↗</span></button>
+        </form>
+        <div class="panel discovery-results">
+          <div class="panel-head"><div><div class="section-kicker">SEARCH RESULTS</div><h3>Choose businesses</h3></div><span class="result-count">{{ discovered|length }}</span></div>
+          {% if discovered %}
+            <form method="post" action="{{ url_for('add_discovered') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="place-list">
+              {% for place in discovered %}
+                <label class="place-row {% if not place.Website %}no-website{% endif %}">
+                  <input type="checkbox" name="place_index" value="{{ loop.index0 }}" {% if not place.Website %}disabled{% endif %}>
+                  <span class="place-check"></span>
+                  <span class="place-info"><strong>{{ place.Business }}</strong><small>{{ place.Address or place.Location }}</small>{% if place.Website %}<small class="place-url">{{ place.Website }}</small>{% else %}<small class="muted">No website listed</small>{% endif %}</span>
+                  <span class="place-mark">↗</span>
+                </label>
+              {% endfor %}
+              </div>
+              <button class="button secondary full" type="submit">Add selected businesses</button>
+            </form>
+          {% else %}<div class="empty-state"><span class="empty-icon">◎</span><strong>Your results will appear here</strong><p>Search for local businesses, then select the ones with websites you want to compare.</p></div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="competitors">
+      <div class="section-kicker">03 — COMPARISON LIST</div>
+      <div class="section-heading"><div><h2>Your websites to analyse.</h2><p>Add discovered businesses, enter one manually, or import a CSV.</p></div><span class="step-badge">{{ competitors|length }} LISTED</span></div>
+      <div class="list-layout">
+        <div class="panel competitor-panel">
+          {% if competitors %}<div class="competitor-list">{% for item in competitors %}<div class="competitor-row"><span class="business-avatar">{{ item.Business[:1]|upper }}</span><span class="competitor-info"><strong>{{ item.Business }}</strong><a href="{{ item.Website }}" target="_blank" rel="noopener">{{ item.Website }} ↗</a></span><form method="post" action="{{ url_for('delete_competitor') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="index" value="{{ loop.index0 }}"><button class="icon-button" title="Remove {{ item.Business }}" aria-label="Remove {{ item.Business }}">×</button></form></div>{% endfor %}</div><form method="post" action="{{ url_for('clear_competitors') }}" class="clear-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-button" type="submit">Clear comparison list</button></form>
+          {% else %}<div class="empty-state compact"><span class="empty-icon">＋</span><strong>No competitors added yet</strong><p>Choose businesses from discovery, or add a competitor manually.</p></div>{% endif %}
+        </div>
+        <div class="panel add-panel">
+          <h3>Add a competitor</h3>
+          <form method="post" action="{{ url_for('add_competitor') }}" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Business name<input name="business" placeholder="Business name" required></label><label>Public website<input name="website" placeholder="https://example.com" required></label><button class="button secondary full" type="submit">Add website <span>＋</span></button></form>
+          <div class="divider-label"><span>OR IMPORT</span></div>
+          <form method="post" action="{{ url_for('import_competitors') }}" enctype="multipart/form-data" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="file-label">CSV file<input type="file" name="file" accept=".csv,text/csv" required></label><small>Needs <code>Business</code> and <code>Website</code> columns. Import replaces the current list.</small><button class="button quiet full" type="submit">Import CSV</button></form>
+        </div>
+      </div>
+    </section>
+
+    <section class="section results-section" id="results">
+      <div class="section-kicker">04 — WEBSITE REVIEW</div>
+      <div class="section-heading"><div><h2>Compare the visible signals.</h2><p>Run checks on your own website and every competitor in your list.</p></div><span class="step-badge">STEP 04</span></div>
+      <form method="post" action="{{ url_for('analyze') }}" class="run-bar"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div><strong>Ready to analyse?</strong><small>{{ competitors|length }} competitor website(s){% if profile.website %} · plus your website{% endif %}</small></div><button class="button primary" type="submit">Run website analysis <span>↗</span></button></form>
+      {% if results %}
+        <div class="metric-grid"><div class="metric-card"><span>Websites checked</span><strong>{{ results|length }}</strong></div><div class="metric-card"><span>Successfully analysed</span><strong>{{ successful_count }}</strong></div><div class="metric-card"><span>Average website signal score</span><strong>{% if average_score is not none %}{{ average_score }}<small>/100</small>{% else %}N/A{% endif %}</strong></div></div>
+        {% if insights %}<div class="insight-panel"><div class="panel-icon">✳</div><div><div class="section-kicker">OBSERVATIONS</div><h3>What stands out</h3><ul>{% for insight in insights %}<li>{{ insight }}</li>{% endfor %}</ul></div></div>{% endif %}
+        <div class="panel table-panel"><div class="panel-head"><div><div class="section-kicker">RESULTS</div><h3>Website signal comparison</h3></div><div class="download-actions"><a class="button quiet small-button" href="{{ url_for('download_csv') }}">Download CSV ↓</a><a class="button quiet small-button" href="{{ url_for('download_pdf') }}">Download PDF ↓</a></div></div>
+          <div class="table-scroll"><table><thead><tr><th>Business</th><th>Website</th><th>Status</th><th>Score</th><th>Coverage</th><th>HTTPS</th></tr></thead><tbody>{% for row in results %}<tr><td><strong>{{ row.Business }}</strong></td><td><a class="table-link" href="{{ row.Website }}" target="_blank" rel="noopener">{{ row.Website }} ↗</a></td><td><span class="status-pill {% if row.Status == 'Analysed' %}ok{% else %}problem{% endif %}">{{ row.Status }}</span></td><td>{% if row['Website Score'] is not none %}<span class="score-value">{{ row['Website Score'] }}</span><span class="score-max"> / 100</span>{% else %}—{% endif %}</td><td>{{ row.Coverage }}</td><td>{% if row.HTTPS %}Yes{% elif row.HTTPS == false %}No{% else %}—{% endif %}</td></tr><tr class="evidence-row"><td colspan="6"><details><summary>Evidence for {{ row.Business }}</summary><p>{{ row.Evidence or 'No additional evidence returned.' }}</p>{% if row.Title %}<p><b>Page title:</b> {{ row.Title }}</p>{% endif %}{% if row['Meta Description'] %}<p><b>Description:</b> {{ row['Meta Description'] }}</p>{% endif %}</details></td></tr>{% endfor %}</tbody></table></div>
+        </div>
+      {% else %}<div class="empty-state results-empty"><span class="empty-icon">◫</span><strong>Your comparison will appear here</strong><p>Once you have competitor websites, run the analysis to see scores, coverage, evidence and downloadable reports.</p></div>{% endif %}
+    </section>
+
+    <section class="section how-section" id="how-it-works">
+      <div class="section-kicker">05 — HOW TO READ THIS</div><div class="section-heading"><div><h2>Useful signals, honest limits.</h2><p>A quick explanation of what the analysis can—and can’t—tell you.</p></div></div>
+      <div class="how-grid"><article class="how-card"><span>01</span><h3>Measured</h3><p>Page title, meta description, headings, visible text, contact signals, and HTTPS.</p></article><article class="how-card"><span>02</span><h3>Score coverage</h3><p>The score reflects available checks. Missing signals are excluded, and coverage shows what could be measured.</p></article><article class="how-card"><span>03</span><h3>Not measured</h3><p>Traffic, rankings, reviews, conversion rates, advertising, and market share are outside this version.</p></article></div>
+      <p class="privacy-note">Only submit public websites you’re permitted to access. Google Places searches may incur charges. Website scores are heuristic indicators, not business rankings.</p>
+    </section>
+  </main>
+  <footer class="footer wrap"><a class="brand" href="#top"><span class="brand-mark">CA</span><span>Competitor Analysis<span class="brand-dot">.</span></span></a><p>Research clearly · Compare responsibly</p><span>© {{ analyzed_at[:4] if analyzed_at else '2026' }} Competitor Analysis Agent</span></footer>
+  <script>
+    const industrySelect = document.querySelector('#industry-select');
+    const customWrap = document.querySelector('#custom-industry-wrap');
+    const customInput = document.querySelector('#custom-industry');
+    const profileForm = industrySelect?.closest('form');
+    function toggleCustomIndustry() {
+      const custom = industrySelect.value === '__custom__';
+      customWrap.classList.toggle('hidden', !custom);
+      customInput.disabled = !custom;
+      customInput.required = custom;
+    }
+    if (industrySelect) {
+      toggleCustomIndustry();
+      industrySelect.addEventListener('change', toggleCustomIndustry);
+      profileForm.addEventListener('submit', () => {
+        if (industrySelect.value === '__custom__') industrySelect.value = customInput.value;
+        customInput.disabled = true;
+      });
+    }
+  </script>
+</body>
+</html>
