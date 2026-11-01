@@ -75,8 +75,7 @@
               <div class="place-list">
               {% for place in discovered %}
                 <label class="place-row {% if not place.Website %}no-website{% endif %}">
-                  <input type="checkbox" name="place_index" value="{{ loop.index0 }}" {% if not place.Website %}disabled{% endif %}>
-                  <span class="place-check"></span>
+                  <input class="place-checkbox" type="checkbox" name="place_index" value="{{ loop.index0 }}" {% if not place.Website %}disabled{% endif %}>
                   <span class="place-info"><strong>{{ place.Business }}</strong><small>{{ place.Address or place.Location }}</small>{% if place.Website %}<small class="place-url">{{ place.Website }}</small>{% else %}<small class="muted">No website listed</small>{% endif %}</span>
                   <span class="place-mark">↗</span>
                 </label>

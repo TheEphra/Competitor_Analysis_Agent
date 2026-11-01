@@ -6,6 +6,7 @@ from io import BytesIO
 from urllib.parse import urlparse
 import ipaddress
 import socket
+from xml.sax.saxutils import escape
 
 import pandas as pd
 import plotly.express as px
@@ -75,6 +76,13 @@ st.markdown(
 HEADERS = {
     "User-Agent": "CompetitorAnalysisStudentProject/1.0"
 }
+
+
+def safe_csv_cell(value):
+    """Prevent spreadsheet apps from treating exported text as a formula."""
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
 
 
 def normalize_url(value: str) -> str:
@@ -150,11 +158,21 @@ def analyze_website(name: str, website: str) -> dict:
             url,
             headers=HEADERS,
             timeout=(5, 12),
-            allow_redirects=True,
+            allow_redirects=False,
             stream=True,
         )
 
         try:
+            if response.is_redirect:
+                result["Website"] = url
+                result["HTTPS"] = url.startswith("https://")
+                result["Status"] = "Redirect not followed"
+                result["Evidence"] = (
+                    "Website returned a redirect. Add and validate its "
+                    "destination before analyzing it."
+                )
+                return result
+
             final_url = normalize_url(response.url)
             result["Website"] = final_url
             result["HTTPS"] = final_url.startswith("https://")
@@ -311,9 +329,9 @@ def make_pdf(
     story = [
         Paragraph("Competitor Analysis Report", styles["Title"]),
         Spacer(1, 8),
-        Paragraph(f"<b>Business:</b> {company}", styles["Normal"]),
-        Paragraph(f"<b>Location:</b> {location}", styles["Normal"]),
-        Paragraph(f"<b>Industry:</b> {industry}", styles["Normal"]),
+        Paragraph(f"<b>Business:</b> {escape(str(company or ''))}", styles["Normal"]),
+        Paragraph(f"<b>Location:</b> {escape(str(location or ''))}", styles["Normal"]),
+        Paragraph(f"<b>Industry:</b> {escape(str(industry or ''))}", styles["Normal"]),
         Paragraph(
             f"<b>Generated:</b> {datetime.now().astimezone().strftime('%d %b %Y, %H:%M %Z')}",
             styles["Normal"],
@@ -789,6 +807,8 @@ with tab_reports:
         st.info("Run website analysis in the Overview tab before exporting.")
     else:
         export_df = st.session_state.results.copy()
+        for column in export_df.columns:
+            export_df[column] = export_df[column].map(safe_csv_cell)
 
         st.download_button(
             "Download results as CSV",

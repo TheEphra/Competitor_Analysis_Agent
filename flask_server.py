@@ -7,6 +7,8 @@ import io
 import os
 import secrets
 from datetime import datetime
+from urllib.parse import urlsplit
+from xml.sax.saxutils import escape
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -29,6 +31,37 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", M
 # This is a local, single-process app. The browser cookie stores only a random
 # workspace ID; business data stays in the Python process, not in the cookie.
 WORKSPACES: dict[str, dict] = {}
+
+
+def normalize_website_url(value: str) -> str:
+    """Normalize a user-entered URL and reject unsafe link schemes."""
+    value = (value or "").strip()
+    if not value:
+        raise ValueError("Enter a website URL.")
+
+    candidate = value if "://" in value else f"https://{value}"
+    try:
+        parsed = urlsplit(candidate)
+        parsed.port  # Validate malformed port numbers.
+    except ValueError as exc:
+        raise ValueError("Enter a valid HTTP or HTTPS website URL.") from exc
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or any(char.isspace() for char in parsed.netloc)
+    ):
+        raise ValueError("Enter a valid HTTP or HTTPS website URL.")
+    return parsed.geturl()
+
+
+def safe_csv_cell(value):
+    """Prevent spreadsheet apps from treating exported text as a formula."""
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
 
 
 def fresh_workspace() -> dict:
@@ -85,11 +118,17 @@ def save_profile():
     industry = request.form.get("industry", "").strip()
     if industry == "__custom__":
         industry = request.form.get("custom_industry", "").strip()
+    raw_website = request.form.get("website", "").strip()
+    try:
+        website = normalize_website_url(raw_website) if raw_website else ""
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("index") + "#workspace")
     state["profile"] = {
         "company": request.form.get("company", "").strip(),
         "location": request.form.get("location", "").strip(),
         "industry": industry,
-        "website": request.form.get("website", "").strip(),
+        "website": website,
     }
     flash("Business details saved.", "success")
     return redirect(url_for("index") + "#workspace")
@@ -97,9 +136,14 @@ def save_profile():
 
 @app.post("/discover")
 def discover():
-    profile = g.workspace["profile"]
+    state = g.workspace
+    profile = state["profile"]
     location = request.form.get("location", profile.get("location", "")).strip()
     industry = request.form.get("industry", profile.get("industry", "")).strip()
+    profile["location"] = location
+    profile["industry"] = industry
+    # Do not leave stale choices on screen if a new search fails.
+    state["discovered"] = []
     try:
         found = discover_competitors(location, industry, int(request.form.get("limit", 10)))
         g.workspace["discovered"] = found
@@ -123,31 +167,50 @@ def add_discovered():
     selected = set(request.form.getlist("place_index"))
     known = {item["Business"].casefold() for item in state["competitors"]}
     added = 0
+    invalid = 0
     for index, item in enumerate(state["discovered"]):
         if str(index) not in selected or not item.get("Website"):
             continue
         name = item["Business"].strip()
+        try:
+            website = normalize_website_url(item["Website"])
+        except ValueError:
+            invalid += 1
+            continue
         if name.casefold() not in known:
-            state["competitors"].append({"Business": name, "Website": item["Website"]})
+            state["competitors"].append({"Business": name, "Website": website})
             known.add(name.casefold())
             added += 1
     state["results"] = []
-    flash(f"Added {added} business(es) to your comparison list." if added else "Select businesses with websites that are not already on your list.", "success" if added else "info")
+    if added:
+        message = f"Added {added} business(es) to your comparison list."
+        if invalid:
+            message += f" Skipped {invalid} with invalid website URLs."
+        flash(message, "success")
+    elif invalid:
+        flash(f"Skipped {invalid} selected business(es) with invalid website URLs.", "error")
+    else:
+        flash("Select businesses with websites that are not already on your list.", "info")
     return redirect(url_for("index") + "#competitors")
 
 
 @app.post("/competitors/add")
 def add_competitor():
     name = request.form.get("business", "").strip()
-    website = request.form.get("website", "").strip()
-    if not name or not website:
+    raw_website = request.form.get("website", "").strip()
+    if not name or not raw_website:
         flash("Enter both the business name and its public website.", "error")
     elif any(item["Business"].casefold() == name.casefold() for item in g.workspace["competitors"]):
         flash("That business is already on your list.", "info")
     else:
-        g.workspace["competitors"].append({"Business": name, "Website": website})
-        g.workspace["results"] = []
-        flash(f"{name} added to your comparison list.", "success")
+        try:
+            website = normalize_website_url(raw_website)
+        except ValueError as exc:
+            flash(str(exc), "error")
+        else:
+            g.workspace["competitors"].append({"Business": name, "Website": website})
+            g.workspace["results"] = []
+            flash(f"{name} added to your comparison list.", "success")
     return redirect(url_for("index") + "#competitors")
 
 
@@ -182,15 +245,27 @@ def import_competitors():
         if not {"business", "website"}.issubset(mapping):
             raise ValueError("CSV needs columns named Business and Website.")
         incoming, seen = [], set()
+        invalid_websites = 0
         for row in reader:
             name = (row.get(mapping["business"]) or "").strip()
-            website = (row.get(mapping["website"]) or "").strip()
+            raw_website = (row.get(mapping["website"]) or "").strip()
+            if name and raw_website:
+                try:
+                    website = normalize_website_url(raw_website)
+                except ValueError:
+                    invalid_websites += 1
+                    continue
+            else:
+                continue
             if name and website and name.casefold() not in seen:
                 incoming.append({"Business": name, "Website": website})
                 seen.add(name.casefold())
         g.workspace["competitors"] = incoming
         g.workspace["results"] = []
-        flash(f"Imported {len(incoming)} business(es) from CSV.", "success")
+        message = f"Imported {len(incoming)} business(es) from CSV."
+        if invalid_websites:
+            message += f" Skipped {invalid_websites} row(s) with invalid website URLs."
+        flash(message, "success" if incoming else "info")
     except (UnicodeDecodeError, csv.Error, ValueError) as exc:
         flash(f"Could not import that file: {exc}", "error")
     return redirect(url_for("index") + "#competitors")
@@ -224,7 +299,10 @@ def download_csv():
     columns = list(dict.fromkeys(key for row in rows for key in row))
     writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
     writer.writeheader()
-    writer.writerows(rows)
+    writer.writerows(
+        {key: safe_csv_cell(value) for key, value in row.items()}
+        for row in rows
+    )
     response = make_response(buffer.getvalue().encode("utf-8-sig"))
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     response.headers["Content-Disposition"] = "attachment; filename=competitor_analysis.csv"
@@ -242,8 +320,8 @@ def download_pdf():
     doc = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=28, leftMargin=28, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     story = [Paragraph("Competitor Analysis Report", styles["Title"]), Spacer(1, 8),
-             Paragraph(f"Business: {profile.get('company') or 'Not specified'}", styles["Normal"]),
-             Paragraph(f"Location: {profile.get('location') or 'Not specified'} · Industry: {profile.get('industry') or 'Not specified'}", styles["Normal"]),
+             Paragraph(f"Business: {escape(str(profile.get('company') or 'Not specified'))}", styles["Normal"]),
+             Paragraph(f"Location: {escape(str(profile.get('location') or 'Not specified'))} · Industry: {escape(str(profile.get('industry') or 'Not specified'))}", styles["Normal"]),
              Paragraph(f"Generated: {datetime.now().astimezone().strftime('%d %b %Y, %H:%M %Z')}", styles["Normal"]), Spacer(1, 14)]
     data = [["Business", "Website", "Status", "Score", "Coverage", "HTTPS"]]
     for row in rows:

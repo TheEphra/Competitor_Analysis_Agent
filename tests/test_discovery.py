@@ -31,12 +31,27 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn("places.rating", post.call_args.kwargs["headers"]["X-Goog-FieldMask"])
 
     def test_validates_inputs_before_request(self):
-        for location, industry, limit in [("", "salon", 5), ("Here", "unsupported", 5), ("Here", "salon", 21)]:
+        for location, industry, limit in [("", "salon", 5), ("Here", "salon", 21)]:
             with self.subTest(location=location, industry=industry, limit=limit):
                 with patch("src.competitor_discovery.requests.post") as post:
                     with self.assertRaises(ValueError):
                         discover_competitors(location, industry, limit, api_key="key")
                     post.assert_not_called()
+
+    def test_custom_industry_is_used_as_typed(self):
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b'{"places":[]}'
+        with patch("src.competitor_discovery.load_dotenv"), \
+             patch("src.competitor_discovery.requests.post", return_value=response) as post:
+            self.assertEqual(
+                discover_competitors("Parassala", "mobile bike repair", api_key="test-key"),
+                [],
+            )
+        self.assertEqual(
+            post.call_args.kwargs["json"]["textQuery"],
+            "mobile bike repair in Parassala",
+        )
 
 
 if __name__ == "__main__":
